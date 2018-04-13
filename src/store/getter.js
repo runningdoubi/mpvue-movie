@@ -1,2 +1,4 @@
-export const currentMovie = state => state.currentMovie
+export default {
+  currentMovie: state => state.currentMovie
+}
 

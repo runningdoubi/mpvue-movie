@@ -1,49 +1,80 @@
 <template>
     <div class="main">
       <div class="top">
-        <header class="header">看电影</header>
+        <header class="header">
+          <span class="title">看电影</span>
+          <span class="hot" @click="showHot">热门</span>
+        </header>
         <div class="search-wrapper">
           <icon class="icon" type="search" size="20"/>
           <input type="text" @confirm="searchMovie" confirm-type="search" placeholder="请输入你想看的电影">
         </div>
       </div>
       <scroll-view scroll-y class="container" @scrolltolower='loadMore'>
-        <div class="item" v-for="(item, index) in movies" :key="index">
-          <div class="img-wrapper">
-            <image :src="item.coverImage" lazy-load="true" class="item-img" />
+        <a class="item-wrapper" href="/pages/showMovie/main" v-for="(item, index) in movies" :key="index" @click="set_currentMovie(item)">
+          <div class="item">
+            <div class="img-wrapper">
+              <img :src="item.coverImage" lazy-load="true" class="item-img" />
+            </div>
+            <div class="info-wrapper">
+              <div class="name">{{item.name}}</div>
+              <div class="download">下载</div>
+              <div v-if="!item.downloadURL.length">暂无链接</div>
+            </div>
           </div>
-          <div class="info-wrapper">
-            <div class="name">{{item.name}}</div>
-            <div class="download" v-for="(url, i) in item.downloadURL" :key="i">下载</div>
-            <div v-if="!item.downloadURL.length">暂无链接</div>
-          </div>
-        </div>
+          <ul class="downurls-wrapper">
+            <li class="item-url" v-for="(url, i) in item.downloadURL" :key="i" @click.stop="saveMovie(url)">{{i+1}}.{{url}}</li>
+          </ul>
+        </a>
       </scroll-view>
     </div>
 </template>
 
 <script>
 import conf from 'config'
+import {mapMutations} from 'vuex'
 
 export default {
   data () {
     return {
       movies: [],
-      page: 1,
-      loading: false,
-      height: ''
+      hot_movies: [],
+      search_movies: [],
+      hot_page: 1,
+      search_page: 1,
+      isSearch: false,
+      loading: false
     }
   },
   created () {
     this._getMore()
+    wx.setNavigationBarTitle({
+      title: '看电影'
+    })
+    wx.setTabBarItem({
+      index: 0,
+      text: 'text',
+      iconPath: '/path/to/iconPath',
+      selectedIconPath: '/path/to/selectedIconPath'
+    })
   },
   methods: {
+    ...mapMutations({
+      'set_currentMovie': 'SET_CURRENT_MOVIE'
+    }),
     loadMore () {
-      this.page++
+      if (this.isSearch) {
+        this.search_page++
+      } else {
+        this.hot_page++
+      }
       this._getMore()
     },
+    showHot () {
+      this.movies = this.hot_movies
+      this.isSearch = false
+    },
     searchMovie (e) {
-      console.log(e)
       let _this = this
       let keyword = e.target.value
       if (keyword.length < 3) {
@@ -55,16 +86,18 @@ export default {
         })
         return
       }
+      this.keyword = keyword
+      this.isSearch = true
       wx.showLoading({
         title: '加载中'
       })
       wx.request({
         url: `${conf.baseUrl}/dytt/dyttSearch`,
         data: {
-          keyword
+          keyword,
+          page: this.search_page
         },
         success: function (res) {
-          console.log(res.data)
           if (res.data.success) {
             if (!res.data.result.length) {
               wx.showModal({
@@ -84,23 +117,52 @@ export default {
         }
       })
     },
+    saveMovie (url) {
+      wx.downloadFile({
+        url,
+        success (res) {
+          wx.saveFile({
+            url: res.tempFilePath,
+            success (res) {
+              wx.showToast({
+                title: '保存成功'
+              })
+              console.log(res.savedFilePath)
+            },
+            fail (e) {
+              console.log(e)
+            }
+          })
+        },
+        fail (e) {
+          console.log(e)
+        }
+      })
+    },
     _getMore () {
       let _this = this
       if (_this.loading) {
         return
       }
-      _this.loading = true
+      this.loading = true
       wx.showLoading({
         title: '加载中'
       })
+      let url = this.isSearch ? `${conf.baseUrl}/dytt/dyttSearch` : `${conf.baseUrl}/dytt/dyttNew`
+      let data = this.isSearch ? {keyword: this.keyword, page: this.search_page} : {page: this.hot_page}
       wx.request({
-        url: `${conf.baseUrl}/dytt/dyttNew`,
-        data: {
-          page: this.page
-        },
+        url,
+        data,
         success: function (res) {
           console.log(res.data)
-          _this.movies = [..._this.movies, ...res.data.result]
+          if (!res.data.result.length) {
+            wx.showToast({
+              title: '没有更多了'
+            })
+            return
+          }
+          _this.isSearch ? _this.search_movies = _this.search_movies.concat(res.data.result) : _this.hot_movies = _this.hot_movies.concat(res.data.result)
+          _this.isSearch ? _this.movies = _this.search_movies : _this.movies = _this.hot_movies
         },
         complete: function () {
           wx.hideLoading()
@@ -122,10 +184,18 @@ export default {
   top: 0;
   left: 0;
   width: 100vw;
+  opacity: 0.5;
 }
-.header{
-  padding: 10px;
+.top .header{
+  position: relative;
+  padding: 15px 10px 10px;
   text-align: center;
+  font-size: 16px;
+}
+.top .hot{
+  position: absolute;
+  right: 10px;
+  font-size: 14px;
 }
 .search-wrapper{
   display: flex;
@@ -144,6 +214,9 @@ export default {
   height: 100vh;
   padding: 87px 10px 10px;
 }
+.container .item-wrapper{
+  margin-bottom: 10px;
+}
 .container .item{
   display: flex;
 }
@@ -157,5 +230,8 @@ export default {
   justify-content: space-around;
   padding: 0 10px;
   font-size: 14px;
+}
+.container .downurls-wrapper .item-url{
+  font-size: 12px;
 }
 </style>
